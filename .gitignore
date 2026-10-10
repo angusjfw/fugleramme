@@ -22,6 +22,15 @@ frame.png
 # Per-Pi detector config, generated from config.yaml.template by setup.sh
 detector/config/config.yaml
 
+# BirdNET-Go's runtime inside the mounted config dir: downloaded models and
+# catalogs, support dumps, the install id, and pre-edit backups of config.yaml.
+detector/config/model-catalog.json
+detector/config/models/
+detector/config/remote-catalog/
+detector/config/diagnostics/
+detector/config/.system_id
+detector/config/config.yaml.bak*
+
 # Per-Pi container env (UID/GID/ALSA card), written by run.sh
 detector/.env
 
