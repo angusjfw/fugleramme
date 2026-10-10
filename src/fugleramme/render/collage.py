@@ -24,6 +24,7 @@ is unaffected by which other birds are on the page, or by a restart.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import threading
@@ -39,6 +40,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from ..names import canonical, drawable_keys, image_for, normalize
 from ..picks import Picks
 from ..source import Source
+from ..config import REPO_ROOT
 from . import fonts, packing
 from .page import (
     MIN_LABEL_PX,
@@ -59,6 +61,33 @@ from .page import (
 )
 from .paper import PAD, process_sprite
 from .sizes import SIZE_EXPONENT, bird_centre, mass_of, span_ratio
+
+# Local per-species size overrides. The layout sizes a bird by its overall
+# length (its artwork box, head to tail tip), so long-tailed species get a body
+# that reads too small. bird_size_overrides.json at the repo root maps
+# "Genus species" -> size multiplier; restart the frame to apply.
+_OVERRIDES_PATH = REPO_ROOT / "bird_size_overrides.json"
+
+
+def _load_size_overrides() -> dict[str, float]:
+    try:
+        raw = json.loads(_OVERRIDES_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, float] = {}
+    for key, value in raw.items():
+        try:
+            scale = float(value)
+        except (TypeError, ValueError):
+            continue
+        if scale > 0:
+            out[normalize(str(key))] = scale
+    return out
+
+
+_SIZE_OVERRIDES = _load_size_overrides()
 
 log = logging.getLogger(__name__)
 
@@ -231,7 +260,10 @@ def _size_weights(names: list[str]) -> list[float]:
     geometric mean and compressed by SIZE_EXPONENT."""
     masses = [mass_of(n) for n in names]
     geo = math.exp(sum(math.log(m) for m in masses) / len(masses))
-    return [(m / geo) ** SIZE_EXPONENT for m in masses]
+    return [
+        (m / geo) ** SIZE_EXPONENT * _SIZE_OVERRIDES.get(normalize(n), 1.0)
+        for n, m in zip(names, masses)
+    ]
 
 
 def _layout(
