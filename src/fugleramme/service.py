@@ -22,6 +22,7 @@ from dataclasses import replace
 from . import __version__, buttons, languages, modes, taxa, updates
 from .api import Configured
 from .config import Config
+from .display import Display
 from .languages import namer
 from .panel import init_panel, resolution_of
 from .picks import FILENAME as PICKS_FILE, Picks
@@ -120,6 +121,7 @@ def run(config: Config) -> None:
     panel = init_panel()
     store, source = detector(config)
     picks = Picks(config.config_path.parent / PICKS_FILE)
+    display = Display(config.config_path.parent)
     status = Status()
 
     server = serve(
@@ -131,6 +133,7 @@ def run(config: Config) -> None:
         picks,
         panel,
         status,
+        display,
     )
 
     def _shutdown(signum: int, frame: object) -> None:
@@ -175,21 +178,29 @@ def run(config: Config) -> None:
             size,
             textured=False,
             panel=panel is not None or settings.external_panel,
+            pin=display.current(),
         )
         try:
-            last_artless = _log_artless(ctx, last_artless)
+            # A pinned image does not read the detector, so it is logged (and its
+            # absence from the page irrelevant) only while the birds are drawn.
+            if ctx.pin is None:
+                last_artless = _log_artless(ctx, last_artless)
             key = (modes.state_key(ctx), settings.rotation)
             # The floor paces the birds alone; a saved setting goes straight through.
             if key != last_key and (
                 _paced(settings) != last_settings or _due(settings.refresh_minutes, last_render)
             ):
-                if modes.mode_of(ctx.mode).windowed:
+                if ctx.pin is None and modes.mode_of(ctx.mode).windowed:
                     # The loop owns the window, so it is the only caller that may forget
                     # a departed bird's artwork - the kiosk may be previewing another one.
                     picks.retain(name for name, _ in source.species_since(settings.lookback_hours))
                 panel_image = dither(modes.render(ctx))
                 panel_image.save(config.output_path)
-                log.info("Rendered %s for the panel at %dx%d", ctx.mode, *size)
+                log.info(
+                    "Rendered %s for the panel at %dx%d",
+                    "the pinned image" if ctx.pin else ctx.mode,
+                    *size,
+                )
                 frame = (panel_image, settings.rotation)
                 status.rendered(frame)
                 last_key, last_settings, last_render = key, _paced(settings), time.monotonic()

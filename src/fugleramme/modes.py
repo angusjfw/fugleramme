@@ -26,11 +26,13 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 
+from .display import Pin
 from .languages import STATION, Drawable, Namer, english_name, station_locale
 from .names import drawable_keys, image_for, normalize, perches_for, resolve
 from .picks import Picks
 from .render import fonts
 from .render.collage import KEY_LIMIT, NO_LIMIT, gather_entries, render_collage, selected_species
+from .render.display import render_display
 from .render.page import NEW, Edges, day_ordinal
 from .render.plate import effective_margin, render_plate
 from .source import Source, Species
@@ -69,6 +71,8 @@ class Context:
     spotlight: bool
     margin: Edges  # of the short side; the settings are percents
     textured: bool = True
+    # A pinned image overrides the mode's page. None is the birds.
+    pin: Pin | None = None
 
     def perches(self):
         return perches_for(self.images_dir, self.style)
@@ -88,8 +92,10 @@ def context(
     resolution: tuple[int, int],
     textured: bool = True,
     panel: bool = False,
+    pin: Pin | None = None,
 ) -> Context:
-    """`panel`: the page is the panel's or follows it, and takes its edges."""
+    """`panel`: the page is the panel's or follows it, and takes its edges.
+    `pin`: an uploaded image takes the page in place of the mode's own."""
     keyed = settings.show_names and settings.name_key
     return Context(
         mode=settings.mode,
@@ -110,6 +116,7 @@ def context(
         spotlight=settings.spotlight,
         margin=Edges(*(m / 100 for m in settings.margins(panel))),
         textured=textured,
+        pin=pin,
     )
 
 
@@ -351,6 +358,10 @@ def mode_of(key: str) -> Mode:
 def state_key(ctx: Context) -> tuple:
     """Everything the page is a function of: the render cache key, and what the
     kiosk polls to know the picture changed."""
+    if ctx.pin is not None:
+        # Nothing about the birds is on the page, and asking would fail the render
+        # when the detector is down - exactly when a pin is worth having.
+        return ("display", ctx.pin.token, ctx.resolution, ctx.textured)
     mode = mode_of(ctx.mode)
     return (
         ctx.mode,
@@ -382,6 +393,11 @@ def token(key: tuple) -> str:
 
 
 def render(ctx: Context) -> Image.Image:
+    if ctx.pin is not None:
+        try:
+            return render_display(ctx.pin, ctx.resolution, ctx.textured, ctx.margin)
+        except OSError as exc:  # unreadable: draw the birds rather than nothing
+            log.warning("Pinned image unreadable (%s); drawing the page instead", exc)
     return mode_of(ctx.mode).render(ctx)
 
 

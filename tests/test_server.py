@@ -405,7 +405,7 @@ def test_every_route_is_either_the_kiosk_or_behind_the_password(tmp_path, source
         None,
         Status(),
     )
-    known = set(server.FILES) | set(handler.ROUTES) | {"/detector"}  # /detector is POST-only
+    known = set(server.FILES) | set(handler.ROUTES) | {"/detector", "/display", "/display/clear"}
     assert known - server.GATED == {
         "/",
         "/index.html",
@@ -767,3 +767,70 @@ def test_a_signed_out_post_saves_nothing(locked, tmp_path):
 
     _post(locked + "/admin", {"mode": "latest"}, _signed_in(locked))
     assert SettingsStore(tmp_path / SETTINGS).get().mode == "latest"
+
+
+def _image(size: tuple[int, int] = (80, 60), colour=(10, 120, 200)) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", size, colour).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _upload(base: str, fit: str = "fit", data: bytes | None = None):
+    return _fetch(
+        f"{base}/display?fit={fit}",
+        "POST",
+        {"Content-Type": "image/png"},
+        data=_image() if data is None else data,
+        follow=False,
+    )
+
+
+def test_an_upload_takes_the_kiosk_page_and_clearing_puts_the_birds_back(frame):
+    birds = json.loads(_fetch(frame + "/state")[2])["token"]
+
+    status, _headers, body = _upload(frame)
+    assert status == 200 and json.loads(body) == {"ok": True}
+    assert json.loads(_fetch(frame + "/state")[2])["token"] != birds
+    assert _size(_fetch(frame + "/collage.png")[2]) == (1440, 1080)
+    assert _size(_fetch(frame + "/display.png")[2]) == (80, 60)
+
+    _post(frame + "/display/clear", {})
+    assert json.loads(_fetch(frame + "/state")[2])["token"] == birds
+    assert _fetch(frame + "/display.png")[0] == 404
+
+
+def test_fit_letterboxes_the_upload_and_fill_covers_the_frame(frame):
+    wide = _image(size=(400, 100))
+    for fit, covered in (("fit", False), ("fill", True)):
+        _upload(frame, fit, wide)
+        page = Image.open(io.BytesIO(_fetch(frame + "/collage.png")[2])).convert("RGB")
+        # Inside the frame's 4% margin, so a letterbox bar is told from the picture.
+        assert (page.getpixel((page.width // 2, round(page.height * 0.06))) == (10, 120, 200)) is covered
+
+
+def test_an_upload_that_is_not_an_image_is_refused(frame):
+    status, _headers, _body = _upload(frame, data=b"this is not a picture")
+    assert status == 400
+    assert _fetch(frame + "/display.png")[0] == 404
+
+
+def test_the_admin_shows_what_is_pinned_and_offers_to_clear_it(frame):
+    assert b'action="/display/clear"' not in _fetch(frame + "/admin")[2]
+
+    _upload(frame)
+    page = _fetch(frame + "/admin")[2]
+    assert b'action="/display/clear"' in page and b"/display.png" in page
+
+
+def test_saving_a_setting_clears_the_pinned_image(frame):
+    _upload(frame)
+    assert _fetch(frame + "/display.png")[0] == 200
+
+    _post(frame + "/admin", {"mode": "collage"})
+    assert _fetch(frame + "/display.png")[0] == 404
+
+
+def test_the_pinned_image_is_as_private_as_the_admin(locked):
+    assert _fetch(locked + "/display.png")[0] == 401
+    assert _upload(locked)[0] == 401
+    assert _post(locked + "/display/clear", {})[0] == 401

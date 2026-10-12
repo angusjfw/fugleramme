@@ -17,6 +17,7 @@
 <nav class="tabs" role="tablist">
   <button type="button" role="tab" data-tab="display">Display</button>
   <button type="button" role="tab" data-tab="frame">Frame</button>
+  <button type="button" role="tab" data-tab="image">Image</button>
   <button type="button" role="tab" data-tab="detector">Detector</button>
   <button type="button" role="tab" data-tab="security">Security</button>
   <button type="button" role="tab" data-tab="system">System</button>
@@ -58,6 +59,10 @@
     <h2>On the page (<span id="count">$species_count</span>)</h2>
     <ul class="species" id="species">$species_rows</ul>
   </aside>
+</section>
+<section id="tab-image" hidden>
+  <h2>Show an image</h2>
+  $image_field
 </section>
 <section id="tab-detector" hidden>
   <h2>BirdNET-Go</h2>

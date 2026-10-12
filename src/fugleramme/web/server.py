@@ -40,6 +40,7 @@ from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from .. import __version__, e6, modes, updates
+from ..display import MAX_UPLOAD, Display, Pin
 from ..languages import namer
 from ..panel import Panel, resolution_of
 from ..picks import Picks
@@ -58,7 +59,11 @@ JSON = "application/json"
 
 # What a password covers (#52). The kiosk stays open whatever is set: it is the
 # product, and the demo page and the container's healthcheck read it as strangers.
-GATED = frozenset({"/admin", "/preview.png", "/species", "/update", "/detector", LOGOUT})
+# The pinned image and its controls are as private as the admin that sets them.
+GATED = frozenset(
+    {"/admin", "/preview.png", "/species", "/update", "/detector", LOGOUT}
+    | {"/display", "/display/clear", "/display.png"}
+)
 
 COOKIE = "fugleramme_session"
 SESSION_SECONDS = 7 * 24 * 60 * 60  # a week, the session BirdNET-Go hands out
@@ -126,7 +131,10 @@ def make_handler(
     picks: Picks,
     panel: Panel | None,
     status: Status,
+    display: Display | None = None,
 ):
+    # Defaulted, so a caller with no view on the pin still gets a frame that has one.
+    display = display or Display(store.path.parent)
     def glass(settings: Settings) -> tuple[int, int] | None:
         """The panel the page is laid out for, or None: nothing for the kiosk to lock to."""
         if panel or settings.external_panel:
@@ -313,7 +321,7 @@ def make_handler(
         def _query(self) -> dict[str, list[str]]:
             return parse_qs(urlparse(self.path).query, keep_blank_values=True)
 
-        def _context(self, settings: Settings) -> modes.Context:
+        def _context(self, settings: Settings, pin: Pin | None = None) -> modes.Context:
             attached = glass(settings)
             return modes.context(
                 source,
@@ -323,6 +331,7 @@ def make_handler(
                 namer(settings.primary_language, settings.secondary_language, store.path.parent),
                 settings.web_size(attached),
                 panel=settings.web_lock and attached is not None,
+                pin=pin,
             )
 
         def _edited(self) -> Settings:
@@ -335,7 +344,7 @@ def make_handler(
             if source.base_url != last_from:
                 last_page, last_from = None, source.base_url
             try:
-                last_page = modes.png_bytes(self._context(store.get()))
+                last_page = modes.png_bytes(self._context(store.get(), display.current()))
             except Unavailable as exc:
                 if last_page is None:
                     raise
@@ -367,7 +376,7 @@ def make_handler(
 
         def _state(self):
             # Cheap enough to poll: one grouped query, no render.
-            token = modes.token(modes.state_key(self._context(store.get())))
+            token = modes.token(modes.state_key(self._context(store.get(), display.current())))
             self._send(200, json.dumps({"token": token}).encode(), JSON)
 
         def _species(self):
@@ -390,6 +399,7 @@ def make_handler(
                 resolution_of(panel),
                 panel is not None,
                 store.path.parent,
+                display.current(),
             )
             self._send(200, html.encode(), HTML)
 
@@ -410,6 +420,18 @@ def make_handler(
         def _paper(self):
             self._send_cached(paper_png(), "image/png")
 
+        def _display_png(self):
+            """The pinned image itself, for the admin's thumbnail."""
+            pin = display.current()
+            try:
+                body = pin.path.read_bytes() if pin else b""
+            except OSError:
+                body = b""
+            if not body:
+                self._send(404, b"no image shown", "text/plain")
+                return
+            self._send_cached(body, "image/png")
+
         def _health(self):
             self._send(200, b"ok", "text/plain")
 
@@ -419,6 +441,7 @@ def make_handler(
             "/preview.png": _preview_png,
             "/state": _state,
             "/paper.png": _paper,
+            "/display.png": _display_png,
             "/species": _species,
             "/admin": _admin,
             "/update": _update,
@@ -471,6 +494,23 @@ def make_handler(
             if length < 0:  # read(-1) reads to EOF, on a socket the sender holds open
                 self._send(400, b"bad content-length", "text/plain")
                 return
+            if route == "/display":
+                # Raw bytes, not a form: stdlib has no multipart parser. The gate
+                # comes first, since a refusal has no reason to read the upload.
+                if not self._allowed():
+                    self._ask_to_sign_in()
+                    return
+                if length > MAX_UPLOAD:
+                    self._send(413, b"image too large", "text/plain")
+                    return
+                try:
+                    display.store(self.rfile.read(length), self._query().get("fit", [""])[0])
+                except Exception as exc:  # PIL refuses anything it cannot read
+                    log.warning("Refused an image upload: %s", exc)
+                    self._send(400, b"that was not an image the frame can read", "text/plain")
+                    return
+                self._send(200, b'{"ok": true}', JSON)
+                return
             if length > MAX_BODY:  # this is a form, and it is read before any gate
                 self._send(413, b"too large", "text/plain")
                 return
@@ -487,6 +527,10 @@ def make_handler(
                 return
             if route in GATED and not self._allowed():
                 self._ask_to_sign_in()
+                return
+            if route == "/display/clear":
+                display.clear()
+                self._redirect("/admin")
                 return
             if route == LOGOUT:
                 # A new secret, so the cookie just cleared cannot be handed back: one
@@ -523,6 +567,9 @@ def make_handler(
                 if password is not None and password != store.get().admin_password:
                     changes["session_secret"] = secrets.token_urlsafe(32)
                 store.update(**changes)
+                # Saving settings puts the birds back: a pinned image is a
+                # takeover, not a setting to be changed out from under it.
+                display.clear()
             self._redirect("/admin")
 
     return Handler
@@ -537,10 +584,19 @@ def serve(
     picks: Picks,
     panel: Panel | None = None,
     status: Status | None = None,
+    display: Display | None = None,
 ) -> ThreadingHTTPServer:
     """Start the kiosk on a daemon thread. Port 0 asks the OS for one - read it
     back from `server_address[1]`."""
-    handler = make_handler(source, images_dir, store, picks, panel, status or Status())
+    handler = make_handler(
+        source,
+        images_dir,
+        store,
+        picks,
+        panel,
+        status or Status(),
+        display or Display(store.path.parent),
+    )
     httpd = ThreadingHTTPServer((host, port), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd

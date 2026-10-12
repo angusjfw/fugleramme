@@ -19,6 +19,7 @@ from PIL.ImageFont import FreeTypeFont
 from .. import __version__, modes, updates
 from ..api import probe
 from ..config import BIRDNET_PORT, DOCS_URL, NEW_ISSUE_URL, WEB_ASPECTS, WEB_HEIGHTS
+from ..display import DEFAULT_FIT, FITS, Pin
 from ..languages import (
     NONE,
     SCIENTIFIC,
@@ -540,6 +541,46 @@ def connection(form: dict[str, list[str]], settings: Settings) -> dict:
     }
 
 
+IMAGE_NOTE = (
+    "The image takes over the panel and the kiosk until you clear it or save a "
+    "setting. It is not converted to the birds' style."
+)
+
+
+def image_field(pin: Pin | None) -> str:
+    """The image tab: upload one, or clear the one showing.
+
+    The upload posts raw bytes from admin.js - stdlib has no multipart parser -
+    so the form's own action only matters if the script never runs.
+    """
+    radios = "".join(
+        f'<label class="src"><input type="radio" name="fit" value="{value}"'
+        f"{' checked' if value == DEFAULT_FIT else ''}> {label}</label>"
+        for value, label in FITS.items()
+    )
+    if pin is None:
+        current = '<p class="note" id="image-current">No image is being shown.</p>'
+    else:
+        shown = html.escape(FITS[pin.fit])
+        current = (
+            '<div class="pinned" id="image-current">'
+            f'<img src="/display.png?v={html.escape(pin.token)}" alt="The image on the frame">'
+            f'<p class="note">{shown}. Saving any setting, or clearing, '
+            "returns the frame to the birds.</p>"
+            '<form class="inline" method="post" action="/display/clear">'
+            '<button type="submit">Clear</button></form></div>'
+        )
+    return (
+        '<form class="image" id="image" method="post" action="/display">'
+        f'<p class="note">{_hint(IMAGE_NOTE)}</p>'
+        '<label><span>Image</span><input type="file" name="file" accept="image/*"></label>'
+        f'<div class="field"><span>On a page of another shape</span>{radios}</div>'
+        '<button type="submit">Show</button> <span class="ok" id="image-result"></span>'
+        "</form>"
+        f"{current}"
+    )
+
+
 def _lookbacks(settings: Settings) -> str:
     # A hand-edited non-preset value stays selectable so Save doesn't drop it.
     labels = dict(LOOKBACK_OPTIONS)
@@ -752,6 +793,7 @@ def page(
     panel_size: tuple[int, int],
     detected: bool,
     names_dir: Path,
+    pin: Pin | None = None,
 ) -> str:
     """The admin page. Everything about the frame comes off `ctx`, so the
     listing always describes the page the preview is rendering.
@@ -830,6 +872,7 @@ def page(
         ),
         update=_update(status),
         auto_update=_auto_update(settings),
+        image_field=image_field(pin),
         panel=f"detected · {glass}" if detected else "not detected",
         birdnet=_detector(detector_state, detector_version, rows is not None, names_failure),
         detector_field=_detector_field(settings),

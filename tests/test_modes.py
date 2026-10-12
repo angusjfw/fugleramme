@@ -13,6 +13,7 @@ from PIL import Image, features
 
 from fugleramme import fake, modes
 from fugleramme.api import ApiSource
+from fugleramme.display import Pin
 from fugleramme.languages import NONE, STATION, Namer, namer, numeric
 from fugleramme.names import normalize
 from fugleramme.picks import Picks
@@ -323,3 +324,28 @@ def test_a_name_no_face_here_can_draw_reads_as_the_scientific_one(
 
     monkeypatch.setattr(features, "check", lambda name: name == "raqm" or check(name))
     assert modes._labeller(ctx)(TIT) == arabic
+
+
+def _pin(tmp_path, token: str = "pin-1", fit: str = "fit") -> Pin:
+    path = tmp_path / "display.png"
+    Image.new("RGB", (40, 30), (200, 10, 10)).save(path)
+    return Pin(token, path, fit)
+
+
+def test_a_pinned_image_takes_the_page_without_asking_the_detector(
+    tmp_path, images, source
+):
+    """A detector that refuses every call: the pin must not need it, or a picture
+    could not be shown while BirdNET-Go is down - exactly when one is wanted."""
+    ctx = replace(_ctx(source(down=True), images, tmp_path, "collage"), pin=_pin(tmp_path))
+
+    assert np.asarray(modes.render(ctx)).std() > 1
+    assert modes.state_key(ctx)[0] == "display"
+
+
+def test_a_new_pin_moves_the_state_key(tmp_path, images, source):
+    ctx = replace(
+        _ctx(source(rows=[_row(1, BLACKBIRD, 1)]), images, tmp_path, "collage"),
+        pin=_pin(tmp_path),
+    )
+    assert modes.state_key(replace(ctx, pin=_pin(tmp_path, token="pin-2"))) != modes.state_key(ctx)

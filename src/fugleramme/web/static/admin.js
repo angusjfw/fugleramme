@@ -179,6 +179,41 @@ if (test) {
   });
 }
 
+// The pinned image: posted as raw bytes, since the server has no multipart parser.
+// A successful upload reloads, so the preview and the Clear button catch up.
+const imageForm = document.getElementById("image");
+if (imageForm) {
+  const picker = imageForm.querySelector("input[type=file]");
+  const outcome = document.getElementById("image-result");
+  const button = imageForm.querySelector("button[type=submit]");
+  imageForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!picker.files.length) {
+      outcome.className = "bad";
+      outcome.textContent = "choose a file first";
+      return;
+    }
+    const fit = imageForm.querySelector("input[name=fit]:checked").value;
+    button.disabled = true;
+    outcome.className = "";
+    outcome.textContent = "uploading…";
+    try {
+      const answer = await fetch("/display?fit=" + encodeURIComponent(fit), {
+        method: "POST",
+        headers: {"Content-Type": picker.files[0].type || "application/octet-stream"},
+        body: picker.files[0],
+      });
+      if (signedOut(answer)) return;
+      if (!answer.ok) throw new Error(await answer.text());
+      location.reload();
+    } catch (e) {
+      outcome.className = "bad";
+      outcome.textContent = "the frame refused that image";
+      button.disabled = false;
+    }
+  });
+}
+
 // A field standing in for a stored password empties on focus, so what is typed is
 // a whole password rather than something appended to the bullets. Untouched, it
 // fills back in - and having never fired an input event, it is not a change either.
