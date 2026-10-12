@@ -1,8 +1,8 @@
-"""An uploaded image as a page: fitted whole, or cropped to fill the frame.
+"""An uploaded image as a page: fitted whole, or cropped to meet the frame.
 
 The page is the panel's shape, so an image of another shape has to meet it one
-of two ways. Both respect the frame's margin, so a mat that overlaps the panel
-never covers part of the picture.
+of three ways. Two keep the frame's margin, so a mat that overlaps the panel
+never covers part of the picture; "bleed" crops past it, edge to edge.
 """
 
 from __future__ import annotations
@@ -12,7 +12,10 @@ import math
 from PIL import Image
 
 from ..display import Pin
-from .page import Edges, blank, fit
+from .page import NO_MARGIN, Edges, blank, fit
+
+# The fits that crop rather than letterbox.
+CROPS = frozenset({"fill", "bleed"})
 
 
 def render_display(
@@ -24,9 +27,9 @@ def render_display(
     """The pinned image on an otherwise bare page."""
     image = Image.open(pin.path).convert("RGB")
     canvas = blank(resolution, textured)
-    x0, y0, x1, y1 = margin.window(resolution)
+    x0, y0, x1, y1 = (NO_MARGIN if pin.fit == "bleed" else margin).window(resolution)
     box = (x1 - x0, y1 - y0)
-    placed = _cover(image, box) if pin.fit == "fill" else fit(image, box)
+    placed = _cover(image, box) if pin.fit in CROPS else fit(image, box)
     canvas.paste(placed, (x0 + (box[0] - placed.width) // 2, y0 + (box[1] - placed.height) // 2))
     return canvas
 

@@ -799,13 +799,18 @@ def test_an_upload_takes_the_kiosk_page_and_clearing_puts_the_birds_back(frame):
     assert _fetch(frame + "/display.png")[0] == 404
 
 
-def test_fit_letterboxes_the_upload_and_fill_covers_the_frame(frame):
+def test_the_crops_meet_the_frame_where_the_fit_letterboxes(frame):
     wide = _image(size=(400, 100))
-    for fit, covered in (("fit", False), ("fill", True)):
+    for fit, band, corner in (
+        ("fit", False, False),  # bars above and below, and paper all round
+        ("fill", True, False),  # crops, but still inside the margin
+        ("bleed", True, True),  # crops past the margin, edge to edge
+    ):
         _upload(frame, fit, wide)
         page = Image.open(io.BytesIO(_fetch(frame + "/collage.png")[2])).convert("RGB")
-        # Inside the frame's 4% margin, so a letterbox bar is told from the picture.
-        assert (page.getpixel((page.width // 2, round(page.height * 0.06))) == (10, 120, 200)) is covered
+        # Inside the frame's 4% margin, and in the corner that margin leaves bare.
+        assert (page.getpixel((page.width // 2, round(page.height * 0.06))) == (10, 120, 200)) is band
+        assert (page.getpixel((4, 4)) == (10, 120, 200)) is corner
 
 
 def test_an_upload_that_is_not_an_image_is_refused(frame):

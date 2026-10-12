@@ -33,8 +33,12 @@ MAX_PIXELS = 50_000_000
 MAX_UPLOAD = 32 * 1024 * 1024
 
 # How the image meets a page of another shape. "fit" shows all of it with paper
-# at the edges; "fill" crops it to the page.
-FITS = {"fit": "Fit (whole image)", "fill": "Fill (crop to the frame)"}
+# at the edges; the crops cut it down to the frame, and "bleed" past the margin.
+FITS = {
+    "fit": "Fit (whole image)",
+    "fill": "Crop to the frame",
+    "bleed": "Crop edge to edge (no border)",
+}
 DEFAULT_FIT = "fit"
 
 
