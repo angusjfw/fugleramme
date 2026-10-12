@@ -28,6 +28,14 @@ from .config import (
 from .languages import NONE, SCIENTIFIC, STATION
 from .modes import DEFAULT_MODE, MODES
 from .render.collage import DEFAULT_MARGIN, DEFAULT_RANKING, NO_LIMIT, RANKINGS
+from .render.dither import (
+    BRIGHTNESS_RANGE,
+    CONTRAST_RANGE,
+    DEFAULT_BRIGHTNESS,
+    DEFAULT_CONTRAST,
+    DEFAULT_SATURATION,
+    SATURATION_RANGE,
+)
 from .render.fonts import DEFAULT_FONT, DEFAULT_LABEL_SIZE, FONTS, LABEL_SIZES
 from .render.packing import DEFAULT_LAYOUT, LAYOUTS
 
@@ -97,6 +105,11 @@ class Settings:
     rotation: int = 0
     # Serves the panel page at /frame.e6 for an external e-ink panel.
     external_panel: bool = False
+    # The panel's colour, per render/dither.py. The browser view stays full colour,
+    # so these move the glass alone - and the panel is the only judge of them.
+    panel_saturation: int = DEFAULT_SATURATION
+    panel_contrast: int = DEFAULT_CONTRAST
+    panel_brightness: int = DEFAULT_BRIGHTNESS
     lookback_hours: float = 24
     refresh_minutes: int = 0
     # The collage's own default, as a percent.
@@ -172,6 +185,10 @@ class Settings:
         turns = self.rotation // 90  # counter-clockwise: the glass's left comes to the top
         top, right, bottom, left = (glass[(i - turns) % 4] for i in range(4))
         return top, right, bottom, left
+
+    def panel_colour(self) -> tuple[int, int, int]:
+        """The panel colour controls as one value, so the loop can key on them."""
+        return (self.panel_saturation, self.panel_contrast, self.panel_brightness)
 
     def web_size(self, panel: tuple[int, int] | None) -> tuple[int, int]:
         """Kiosk render size at the selected height. Locked, the panel scaled and
@@ -292,6 +309,13 @@ def _coerce(raw: dict, base: Settings | None = None) -> Settings:
         ),
         rotation=rotation,
         external_panel=_as_bool(raw.get("external_panel"), d.external_panel),
+        panel_saturation=_as_int(
+            raw.get("panel_saturation"), d.panel_saturation, *SATURATION_RANGE
+        ),
+        panel_contrast=_as_int(raw.get("panel_contrast"), d.panel_contrast, *CONTRAST_RANGE),
+        panel_brightness=_as_int(
+            raw.get("panel_brightness"), d.panel_brightness, *BRIGHTNESS_RANGE
+        ),
         lookback_hours=_as_hours(raw.get("lookback_hours"), d.lookback_hours),
         refresh_minutes=_as_int(raw.get("refresh_minutes"), d.refresh_minutes, 0, 24 * 60),
         margin=_as_int(raw.get("margin"), d.margin, 0, MARGIN_CEILING),

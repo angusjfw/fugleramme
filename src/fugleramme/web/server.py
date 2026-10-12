@@ -44,6 +44,7 @@ from ..display import MAX_UPLOAD, Display, Pin
 from ..languages import namer
 from ..panel import Panel, resolution_of
 from ..picks import Picks
+from ..render.dither import panel_preview
 from ..render.paper import paper_tile
 from ..settings import Settings, SettingsStore, merged
 from ..source import Source, Unavailable
@@ -135,6 +136,7 @@ def make_handler(
 ):
     # Defaulted, so a caller with no view on the pin still gets a frame that has one.
     display = display or Display(store.path.parent)
+
     def glass(settings: Settings) -> tuple[int, int] | None:
         """The panel the page is laid out for, or None: nothing for the kiosk to lock to."""
         if panel or settings.external_panel:
@@ -148,6 +150,8 @@ def make_handler(
     # The panel page last packed for /frame.e6, the poll it carried, and the frame
     # it was packed from.
     packed: tuple[Frame, int, bytes] | None = None
+    # The admin's dithered preview, keyed by the page and the colour controls.
+    preview_page: tuple[tuple, bytes] | None = None
     # The kiosk polls every few seconds, so one warning per failed request would
     # never stop. Say it once, and again on recovery.
     unreachable = False
@@ -353,9 +357,24 @@ def make_handler(
             self._send_cached(last_page, "image/png")
 
         def _preview_png(self):
-            # The panel's page where there is one, else the kiosk's.
+            # The panel's page where there is one, else the kiosk's. With a panel
+            # the preview is dithered too, so the colour controls can be judged
+            # there rather than waiting a refresh for the glass.
+            nonlocal preview_page
             settings = replace(self._edited(), web_lock=True)
-            self._send_cached(modes.png_bytes(self._context(settings)), "image/png")
+            ctx = self._context(settings)
+            attached = glass(settings)
+            if attached is None:
+                self._send_cached(modes.png_bytes(ctx), "image/png")
+                return
+            key = (modes.state_key(ctx), settings.panel_colour())
+            if preview_page is None or preview_page[0] != key:
+                buffer = io.BytesIO()
+                panel_preview(modes.render(ctx), *settings.panel_colour()).save(
+                    buffer, format="PNG"
+                )
+                preview_page = (key, buffer.getvalue())
+            self._send_cached(preview_page[1], "image/png")
 
         def _e6(self):
             # The loop's page, not a render of its own: it is already dithered, paced

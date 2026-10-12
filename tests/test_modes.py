@@ -332,9 +332,7 @@ def _pin(tmp_path, token: str = "pin-1", fit: str = "fit") -> Pin:
     return Pin(token, path, fit)
 
 
-def test_a_pinned_image_takes_the_page_without_asking_the_detector(
-    tmp_path, images, source
-):
+def test_a_pinned_image_takes_the_page_without_asking_the_detector(tmp_path, images, source):
     """A detector that refuses every call: the pin must not need it, or a picture
     could not be shown while BirdNET-Go is down - exactly when one is wanted."""
     ctx = replace(_ctx(source(down=True), images, tmp_path, "collage"), pin=_pin(tmp_path))

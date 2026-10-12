@@ -531,3 +531,14 @@ def test_the_typeface_warning_is_a_triangle_not_the_info_badge(tmp_path, source)
     warning = re.search(r'<span class="hint caution" id="face-note".*?</span>', page).group()
     assert "<svg" in warning  # the info badge is an empty hint
     assert "⚠" not in page  # a colour emoji on some systems
+
+
+def test_the_panel_colour_sliders_start_at_the_middle(tmp_path, source):
+    page = _page(tmp_path, source())
+    for field, default in (
+        ("panel_saturation", 50),
+        ("panel_contrast", 115),
+        ("panel_brightness", 0),
+    ):
+        assert f'name="{field}"' in page
+        assert f'data-default="{default}"' in page

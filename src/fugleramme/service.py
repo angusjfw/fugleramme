@@ -185,7 +185,7 @@ def run(config: Config) -> None:
             # absence from the page irrelevant) only while the birds are drawn.
             if ctx.pin is None:
                 last_artless = _log_artless(ctx, last_artless)
-            key = (modes.state_key(ctx), settings.rotation)
+            key = (modes.state_key(ctx), settings.rotation, settings.panel_colour())
             # The floor paces the birds alone; a saved setting goes straight through.
             if key != last_key and (
                 _paced(settings) != last_settings or _due(settings.refresh_minutes, last_render)
@@ -194,7 +194,12 @@ def run(config: Config) -> None:
                     # The loop owns the window, so it is the only caller that may forget
                     # a departed bird's artwork - the kiosk may be previewing another one.
                     picks.retain(name for name, _ in source.species_since(settings.lookback_hours))
-                panel_image = dither(modes.render(ctx))
+                panel_image = dither(
+                    modes.render(ctx),
+                    settings.panel_saturation,
+                    settings.panel_contrast,
+                    settings.panel_brightness,
+                )
                 panel_image.save(config.output_path)
                 log.info(
                     "Rendered %s for the panel at %dx%d",

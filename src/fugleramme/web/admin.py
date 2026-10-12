@@ -35,6 +35,14 @@ from ..languages import (
 from ..modes import MODES
 from ..names import available_styles, image_for, normalize, origin_of, source_of
 from ..render.collage import KEY_LIMIT, NO_LIMIT, RANKINGS
+from ..render.dither import (
+    BRIGHTNESS_RANGE,
+    CONTRAST_RANGE,
+    DEFAULT_BRIGHTNESS,
+    DEFAULT_CONTRAST,
+    DEFAULT_SATURATION,
+    SATURATION_RANGE,
+)
 from ..render.fonts import FONTS, LABEL_SIZES, face, load, needs_shaping
 from ..render.packing import LAYOUTS
 from ..settings import (
@@ -683,6 +691,45 @@ def _slider(field: str, caption: str, value: int) -> str:
     )
 
 
+COLOUR_HELP = (
+    "The panel prints six inks, so color is mixed by dithering. Saturation and "
+    "contrast decide how much ink the mix uses, brightness lifts the page; Reset "
+    "returns to the defaults. The browser view is unaffected."
+)
+
+# caption, bounds, unit, default. Every default is the middle of its range.
+COLOUR_FIELDS = (
+    ("panel_saturation", "Saturation", SATURATION_RANGE, "%", DEFAULT_SATURATION),
+    ("panel_contrast", "Contrast", CONTRAST_RANGE, "%", DEFAULT_CONTRAST),
+    ("panel_brightness", "Brightness", BRIGHTNESS_RANGE, "", DEFAULT_BRIGHTNESS),
+)
+
+
+def _colour_slider(
+    field: str, caption: str, value: int, bounds: tuple[int, int], unit: str, default: int
+) -> str:
+    lo, hi = bounds
+    return (
+        f'<label><span><span class="caption">{caption}</span> <small>{value}{unit}</small></span>'
+        f'<input type="range" name="{field}" min="{lo}" max="{hi}" step="1" value="{value}"'
+        f' data-unit="{unit}" data-default="{default}"></label>'
+    )
+
+
+def _colour_field(settings: Settings) -> str:
+    """The panel's colour controls: three sliders centred on their defaults, and
+    a Reset that puts all three back."""
+    sliders = "".join(
+        _colour_slider(field, caption, getattr(settings, field), bounds, unit, default)
+        for field, caption, bounds, unit, default in COLOUR_FIELDS
+    )
+    return (
+        f'<div class="field" id="panel-colour"><span>Colour {_hint(COLOUR_HELP)}</span>'
+        f"{sliders}"
+        '<button type="button" id="colour-reset">Reset</button></div>'
+    )
+
+
 def _margin_field(settings: Settings, panel: bool) -> str:
     """One margin, and one per edge of the glass (#184). The edges are always
     rendered: admin.js offers them while the form has a panel."""
@@ -872,6 +919,7 @@ def page(
         ),
         update=_update(status),
         auto_update=_auto_update(settings),
+        colour_field=_colour_field(settings),
         image_field=image_field(pin),
         panel=f"detected · {glass}" if detected else "not detected",
         birdnet=_detector(detector_state, detector_version, rows is not None, names_failure),

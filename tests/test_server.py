@@ -220,6 +220,17 @@ def test_with_no_panel_the_preview_is_the_kiosk_s_page(frame):
     assert _size(_fetch(frame + "/preview.png?web_aspect=16:9")[2]) == (1920, 1080)
 
 
+def test_the_panel_preview_follows_the_colour_controls(tmp_path, source):
+    """The controls only move the glass, but the preview is dithered too, so they
+    can be judged there rather than waiting out a panel refresh."""
+    store = SettingsStore(tmp_path / SETTINGS)
+    panel = SimpleNamespace(resolution=(800, 480))
+    for base in _serve(tmp_path, source(count=40, seed=0), store=store, panel=panel):
+        plain = _fetch(base + "/preview.png")[2]
+        changed = _fetch(base + "/preview.png?panel_contrast=145&panel_saturation=100")[2]
+        assert plain != changed
+
+
 def _dithered(index: int) -> Image.Image:
     return Image.new("P", (1600, 1200), index)
 
@@ -809,7 +820,9 @@ def test_the_crops_meet_the_frame_where_the_fit_letterboxes(frame):
         _upload(frame, fit, wide)
         page = Image.open(io.BytesIO(_fetch(frame + "/collage.png")[2])).convert("RGB")
         # Inside the frame's 4% margin, and in the corner that margin leaves bare.
-        assert (page.getpixel((page.width // 2, round(page.height * 0.06))) == (10, 120, 200)) is band
+        assert (
+            page.getpixel((page.width // 2, round(page.height * 0.06))) == (10, 120, 200)
+        ) is band
         assert (page.getpixel((4, 4)) == (10, 120, 200)) is corner
 
 

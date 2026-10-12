@@ -361,7 +361,7 @@ function syncMargin() {
 // before the render catches up.
 form.addEventListener("input", (e) => {
   if (e.target.type !== "range") return;
-  e.target.closest("label").querySelector("small").textContent = e.target.value + "%";
+  e.target.closest("label").querySelector("small").textContent = e.target.value + (e.target.dataset.unit ?? "%");
   // Locked, the edges follow, so unlocking starts them at the one margin.
   if (e.target === margin && edgeLock.checked) edges.forEach((edge) => { edge.value = margin.value; });
   const box = preview.getBoundingClientRect();
@@ -372,6 +372,19 @@ form.addEventListener("input", (e) => {
 form.addEventListener("change", (e) => {  // on release, or a keyboard step
   if (e.target.type === "range") queueRender();
 });
+
+// Panel colour: Reset puts the three sliders back to their defaults (each the
+// middle of its range), as one edit the form still has to Save.
+const colourReset = document.getElementById("colour-reset");
+if (colourReset) {
+  colourReset.addEventListener("click", () => {
+    for (const slider of document.querySelectorAll("#panel-colour input[type=range]")) {
+      slider.value = slider.dataset.default;
+      slider.dispatchEvent(new Event("input", {bubbles: true}));
+      slider.dispatchEvent(new Event("change", {bubbles: true}));  // or the preview waits for Save
+    }
+  });
+}
 
 // Settings the chosen mode ignores go dim and stop being submitted, so the
 // saved value survives a trip through a mode that has no use for it.

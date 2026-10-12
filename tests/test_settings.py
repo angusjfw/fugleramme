@@ -485,3 +485,12 @@ def test_an_admin_password_is_kept_exactly_as_typed(tmp_path):
     assert store.update(admin_password=" wren house ").admin_password == " wren house "
     assert SettingsStore(path).get().admin_password == " wren house "
     assert store.update(admin_password=7).admin_password == ""  # still has to be a str
+
+
+def test_the_panel_colour_controls_clamp_to_their_ranges(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text(
+        json.dumps({"panel_saturation": 900, "panel_contrast": 1, "panel_brightness": -900})
+    )
+    assert SettingsStore(path).get().panel_colour() == (100, 85, -40)
+    assert Settings().panel_colour() == (50, 115, 0)  # every default is the middle
